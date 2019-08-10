@@ -1,98 +1,189 @@
 require 'rails_helper'
 
-RSpec.feature "動作に関するテスト", type: :feature do
+RSpec.feature "Bookに関するテスト", type: :feature do
   before do
-    2.times do
-      FactoryBot.create(:book)
-    end
+    @user1 = FactoryBot.create(:user, :create_with_books)
+    @user2 = FactoryBot.create(:user, :create_with_books)
   end
-  scenario "トップ画面(root_path)に新規登録ページへのリンクが表示されているか" do
-    visit root_path
-    expect(page).to have_link "", href: books_path
-  end
-  feature "bookの一覧ページの表示とリンクは正しいか" do
-    before do
-      visit books_path
-    end
-    scenario "bookの一覧表示(tableタグ)と投稿フォームが同一画面に表示されているか" do
-      has_field?('body')
-      has_table?('body')
-    end
-    scenario "bookのタイトルと感想を表示し、詳細・編集・削除のリンクが表示されているか" do
-      Book.all.each do |book|
-        expect(page).to have_content book.title
-        expect(page).to have_content book.body
-        expect(page).to have_link "", href: book_path(book)
-        expect(page).to have_link "", href: edit_book_path(book)
-        expect(page).to have_link "", href: book_path(book)
+  feature "ログインしていない状態で" do
+    feature "以下のページへアクセスした際のリダイレクト先の確認" do
+      scenario "bookの一覧ページ" do
+        visit books_path
+        expect(page).to have_current_path new_user_session_path
+      end
+
+      scenario "bookの詳細ページ" do
+        visit book_path(@user1.books.first)
+        expect(page).to have_current_path new_user_session_path
+      end
+
+      scenario "bookの編集ページ" do
+        visit edit_book_path(@user1.books.first)
+        expect(page).to have_current_path new_user_session_path
       end
     end
   end
-  feature "bookの詳細ページへの表示内容とリンクは正しいか" do
-    given(:book) {Book.first}
+
+  feature "ログインした状態で" do
     before do
-      visit book_path(book)
+      login(@user1)
     end
-    scenario "bookの詳細内容と新規登録、編集ページへのリンクが表示されているか" do
-      expect(page).to have_content book.title
-      expect(page).to have_content book.body
-      expect(page).to have_link "", href: edit_book_path(book)
-      expect(page).to have_link "", href: books_path
+    feature "表示内容とリンクの確認" do
+      scenario "bookの一覧ページの表示内容とリンクは正しいか" do
+        visit books_path
+        books = Book.all
+        books.each do |book|
+          expect(page).to have_link book.title,href: book_path(book)
+          expect(page).to have_content book.body
+        end
+        expect(page).to have_link "",href: edit_user_path(@user1)
+        expect(page).to have_content @user1.name
+        expect(page).to have_content @user1.introduction
+      end
+
+      scenario "bookの一覧ページでtableタグを使用しているか" do
+        visit books_path
+        expect(page).to have_selector "table"
+      end
+
+      scenario "自分のbookの詳細ページでの表示内容とリンクは正しいか" do
+        book = @user1.books.first
+        visit book_path(book)
+        expect(page).to have_content book.title
+        expect(page).to have_content book.body
+        expect(page).to have_link "",href: edit_book_path(book)
+        expect(all("a[data-method='delete']")[-1][:href]).to eq(book_path(@user1.books.first)) #削除ボタンがあることの確認
+        expect(page).to have_link @user1.name,href: user_path(@user1)
+        expect(page).to have_link "",href: edit_user_path(@user1)
+        expect(page).to have_content @user1.name
+        expect(page).to have_content @user1.introduction
+      end
+
+      scenario "他人のbookの詳細ページでの表示内容とリンクは正しいか" do
+        book = @user2.books.first
+        visit book_path(book)
+        expect(page).to have_content book.title
+        expect(page).to have_content book.body
+        expect(page).to_not have_link "",href: edit_book_path(book)
+        expect(all("a[data-method='delete']")[-1][:href]).to_not eq(book_path(@user1.books.first)) #削除ボタンがないことの確認
+        expect(page).to have_link @user2.name,href: user_path(@user2)
+        expect(page).to have_content @user2.name
+        expect(page).to have_content @user2.introduction
+      end
     end
-  end
-  feature "bookを投稿" do
-    before do
-      visit books_path
-      fill_in 'book[title]', with: 'title_a'
-      fill_in 'book[body]', with: 'body_b'
-    end
-    scenario "正しく保存できているか" do
-      expect{
+
+    feature "マイページからbookを投稿" do
+      before do
+        visit user_path(@user1)
+        find_field('book[title]').set("title_a")
+        find_field('book[body]').set("body_b")
+      end
+      scenario "正しく保存できているか" do
+        expect {
+          find("input[name='commit']").click
+        }.to change(@user1.books, :count).by(1)
+      end
+      scenario "リダイレクト先は正しいか" do
         find("input[name='commit']").click
-      }.to change(Book, :count).by(1)
+        expect(page).to have_current_path book_path(Book.last)
+        expect(page).to have_content "title_a"
+        expect(page).to have_content "body_b"
+      end
+      scenario "サクセスメッセージが表示されるか" do
+        find("input[name='commit']").click
+        expect(page).to have_content "successfully"
+      end
     end
-    scenario "リダイレクト先は正しいか" do
-      find("input[name='commit']").click
-      expect(page).to have_current_path book_path(Book.last)
+
+    feature "book一覧ページからbookを投稿" do
+      before do
+        visit books_path
+        find_field('book[title]').set("title_c")
+        find_field('book[body]').set("body_d")
+      end
+      scenario "正しく保存できているか" do
+        expect {
+          find("input[name='commit']").click
+        }.to change(@user1.books, :count).by(1)
+      end
     end
-    scenario "サクセスメッセージは正しく表示されるか" do
-      find("input[name='commit']").click
-      expect(page).to have_content "successfully"
+
+    feature "有効ではない内容のbookを投稿" do
+      before do
+        visit user_path(@user1)
+        find("input[name='book[title]']").set("title_e")
+      end
+      scenario "保存されないか" do
+        expect {
+          find("input[name='commit']").click
+        }.to change(@user1.books, :count).by(0)
+      end
+      scenario "リダイレクト先は正しいか" do
+        find("input[name='commit']").click
+        expect(page).to have_current_path books_path
+      end
+      scenario "エラーメッセージが表示されるか" do
+        find("input[name='commit']").click
+        expect(page).to have_content "error"
+      end
     end
-  end
-  feature "bookの更新" do
-    before do
-      book = Book.first
-      visit edit_book_path(book)
-      fill_in 'book[title]', with: 'update_title_a'
-      fill_in 'book[body]', with: 'update_body_b'
+
+    feature "自分が投稿したbookの更新" do
+      before do
+        book = @user1.books.first
+        visit edit_book_path(book)
+        find_field('book[title]').set('update_title_a')
+        find_field('book[body]').set('update_body_b')
+        find("input[name='commit']").click
+      end
+      scenario "bookが更新されているか" do
+        expect(page).to have_content "update_title_a"
+        expect(page).to have_content "update_body_b"
+      end
+      scenario "リダイレクト先は正しいか" do
+        expect(page).to have_current_path book_path(@user1.books.first)
+      end
+      scenario "サクセスメッセージが表示されるか" do
+        expect(page).to have_content "successfully"
+      end
     end
-    scenario "bookが更新されているか" do
-      find("input[name='commit']").click
-      expect(page).to have_content "update_title_a"
-      expect(page).to have_content "update_body_b"
+
+    feature "他人が投稿したbookの更新" do
+      scenario "編集ページへアクセスできず、book一覧ページにリダイレクトされるか" do
+        visit edit_book_path(@user2.books.first)
+        expect(page).to have_current_path books_path
+      end
     end
-    scenario "リダイレクト先は正しいか" do
-      find("input[name='commit']").click
-      expect(page).to have_current_path book_path(Book.first)
+
+    feature "有効ではない内容のbookの更新" do
+      before do
+        book = @user1.books.first
+        visit edit_book_path(book)
+        find_field('book[title]').set(nil)
+        find("input[name='commit']").click
+      end
+      scenario "リダイレクト先は正しいか" do
+        expect(page).to have_current_path book_path(@user1.books.first)
+      end
+      scenario "エラーメッセージが表示されるか" do
+        expect(page).to have_content "error"
+      end
     end
-    scenario "サクセスメッセージが表示されているか" do
-      find("input[name='commit']").click
-      expect(page).to have_content "successfully"
-    end
-  end
-  feature "bookの削除" do
-    before do
-      visit books_path
-    end
-    scenario "bookが削除されているか" do
-      expect {
-      all("a[data-method='delete']").select{|n| n[:href] == book_path(Book.first)}[0].click
-      }.to change(Book, :count).by(-1)
-    end
-    scenario "リダイレクト先が正しいか" do
-      all("a[data-method='delete']").select{|n| n[:href] == book_path(Book.first)}[0].click
-      expect(page).to have_current_path books_path
+
+    feature "bookの削除" do
+      before do
+        book = @user1.books.first
+        visit book_path(book)
+      end
+      scenario "bookが削除されているか" do
+        expect {
+          all("a[data-method='delete']").select{|n| n[:href] == book_path(@user1.books.first)}[0].click
+        }.to change(@user1.books, :count).by(-1)
+      end
+      scenario "リダイレクト先が正しいか" do
+        all("a[data-method='delete']").select{|n| n[:href] == book_path(@user1.books.first)}[0].click
+        expect(page).to have_current_path books_path
+      end
     end
   end
 end

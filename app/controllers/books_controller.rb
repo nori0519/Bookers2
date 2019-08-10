@@ -1,4 +1,7 @@
 class BooksController < ApplicationController
+  
+
+
   def create
   	book = Book.new(book_params)#ローカル変数：変数の受け取りのみ インスタンス変数：変数の（ビューファイルの受け渡し）
   	if book.save
@@ -13,6 +16,7 @@ class BooksController < ApplicationController
   def index
     @book = Book.new
   	@books = Book.all
+    @user = current_user
   end
 
   def show
@@ -39,9 +43,32 @@ class BooksController < ApplicationController
     redirect_to books_path
   end
 
+  def create_introduction
+    @user = User.new(user_params)
+    @user.save
+    redirect_to books_path
+  end
+  def edit_introduction
+    @user = User.find_by(id: params[:id])
+  end
+
+  def update_introduction
+    @user=User.find_by(id: params[:id])
+    if @user.update(user_params)
+      redirect_to books_path(@user.id)
+    else
+      render :new
+    end
+  end
+
   private
 
   def book_params
   	params.require(:book).permit(:title, :body)
   end
+
+  def user_params
+    params.require(:user).permit(:name, :profile_image)
+  end
+
 end
